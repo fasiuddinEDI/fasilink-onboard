@@ -1,12 +1,20 @@
 """
-FasiLink Client Onboarding Portal
-Simple form for pharmacies and wholesalers to submit their info for EDI setup
+FasiLink Client Onboarding Portal with Google Sheets Integration
+Submissions are saved to Google Sheets for real-time admin access
 """
 import streamlit as st
 import json
 import os
 from datetime import datetime
 from pathlib import Path
+
+# Google Sheets integration
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GSHEETS_AVAILABLE = True
+except ImportError:
+    GSHEETS_AVAILABLE = False
 
 st.set_page_config(
     page_title="FasiLink EDI Onboarding",
@@ -56,24 +64,100 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# HEADER
+# GOOGLE SHEETS SETUP
 # ============================================================
-st.markdown('<div class="main-header">⚕️ FasiLink EDI Onboarding</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Submit your information for AI-powered EDI setup</div>', unsafe_allow_html=True)
+def get_gspread_client():
+    """Authenticate with Google Sheets using Streamlit secrets"""
+    try:
+        # Read credentials from Streamlit secrets
+        credentials_info = {
+            "type": "service_account",
+            "project_id": st.secrets["google_sheets"]["project_id"] if "project_id" in st.secrets["google_sheets"] else "fasilink-edi",
+            "private_key_id": st.secrets["google_sheets"]["private_key_id"] if "private_key_id" in st.secrets["google_sheets"] else "",
+            "private_key": st.secrets["google_sheets"]["private_key"].replace("\n", "
+") if "private_key" in st.secrets["google_sheets"] else "",
+            "client_email": st.secrets["google_sheets"]["client_email"] if "client_email" in st.secrets["google_sheets"] else "",
+            "client_id": st.secrets["google_sheets"]["client_id"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": st.secrets["google_sheets"]["client_x509_cert_url"] if "client_x509_cert_url" in st.secrets["google_sheets"] else ""
+        }
 
-st.markdown("""
-<div class="info-box">
-    <b>What happens next?</b><br>
-    1. You fill out this form (takes 5 minutes)<br>
-    2. FasiLink AI validates your credentials automatically<br>
-    3. Our team reviews and approves your application<br>
-    4. You receive EDI connection details within 24 hours<br>
-    5. Start exchanging documents with your trading partners
-</div>
-""", unsafe_allow_html=True)
+        # If using OAuth (client_id + client_secret)
+        if "client_secret" in st.secrets["google_sheets"]:
+            # For OAuth flow, we use a different approach
+            # For now, we'll use the simpler method with just client_id
+            pass
+
+        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_info(credentials_info, scopes=scopes)
+        client = gspread.authorize(creds)
+        return client
+    except Exception as e:
+        st.error(f"Google Sheets authentication failed: {str(e)}")
+        return None
+
+def save_to_google_sheets(submission_data):
+    """Save submission to Google Sheets"""
+    try:
+        if not GSHEETS_AVAILABLE:
+            return False, "gspread not installed"
+
+        client = get_gspread_client()
+        if not client:
+            return False, "Authentication failed"
+
+        spreadsheet_id = st.secrets["google_sheets"]["spreadsheet_id"]
+        spreadsheet = client.open_by_key(spreadsheet_id)
+
+        # Get or create worksheet
+        try:
+            worksheet = spreadsheet.worksheet("Submissions")
+        except gspread.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title="Submissions", rows="1000", cols="20")
+            # Add headers
+            headers = ["Timestamp", "Submission ID", "Company Name", "Type", "NPI", "DEA", 
+                      "State License", "State", "City", "Email", "Phone", "PMS/ERP", 
+                      "Software Version", "EDI Documents", "Test Mode", "DSCSA", 
+                      "Contact Name", "Contact Title", "Contact Email", "Contact Phone", 
+                      "Notes", "Status"]
+            worksheet.append_row(headers)
+
+        # Prepare row data
+        row = [
+            submission_data.get("submitted_at", ""),
+            submission_data.get("id", ""),
+            submission_data.get("company_name", ""),
+            submission_data.get("company_type", ""),
+            submission_data.get("npi", ""),
+            submission_data.get("dea", ""),
+            submission_data.get("state_license", ""),
+            submission_data.get("state", ""),
+            submission_data.get("city", ""),
+            submission_data.get("email", ""),
+            submission_data.get("phone", ""),
+            f"{submission_data.get('pms_software', 'N/A')} / {submission_data.get('erp_system', 'N/A')}",
+            submission_data.get("software_version", ""),
+            ", ".join(submission_data.get("preferred_docs", [])),
+            "Yes" if submission_data.get("test_first") else "No",
+            "Yes" if submission_data.get("dscsa_verify") else "No",
+            submission_data.get("contact_name", ""),
+            submission_data.get("contact_title", ""),
+            submission_data.get("contact_email", ""),
+            submission_data.get("contact_phone", ""),
+            submission_data.get("notes", ""),
+            submission_data.get("status", "Pending Review")
+        ]
+
+        worksheet.append_row(row)
+        return True, "Saved to Google Sheets"
+
+    except Exception as e:
+        return False, str(e)
 
 # ============================================================
-# DATA STORAGE
+# LOCAL BACKUP STORAGE
 # ============================================================
 DATA_DIR = Path("fasilink_data")
 DATA_DIR.mkdir(exist_ok=True)
@@ -95,6 +179,23 @@ def save_submission(data):
     submissions.append(data)
     with open(SUBMISSIONS_FILE, 'w') as f:
         json.dump(submissions, f, indent=2, default=str)
+
+# ============================================================
+# HEADER
+# ============================================================
+st.markdown('<div class="main-header">⚕️ FasiLink EDI Onboarding</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">Submit your information for AI-powered EDI setup</div>', unsafe_allow_html=True)
+
+st.markdown("""
+<div class="info-box">
+    <b>What happens next?</b><br>
+    1. You fill out this form (takes 5 minutes)<br>
+    2. FasiLink AI validates your credentials automatically<br>
+    3. Our team reviews and approves your application<br>
+    4. You receive EDI connection details within 24 hours<br>
+    5. Start exchanging documents with your trading partners
+</div>
+""", unsafe_allow_html=True)
 
 # ============================================================
 # ONBOARDING FORM
@@ -206,7 +307,16 @@ with st.form("client_onboarding"):
                 "ai_reviewed": False
             }
 
+            # Save locally
             save_submission(submission)
+
+            # Save to Google Sheets
+            sheets_success, sheets_msg = save_to_google_sheets(submission)
+
+            if sheets_success:
+                st.success("✅ Saved to Google Sheets! Admin will review shortly.")
+            else:
+                st.warning(f"⚠️ Saved locally but Google Sheets sync failed: {sheets_msg}")
 
             st.markdown(f"""
             <div class="success-box">
