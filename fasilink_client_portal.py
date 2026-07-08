@@ -70,27 +70,23 @@ def get_gspread_client():
     """Authenticate with Google Sheets using Streamlit secrets"""
     try:
         # Read credentials from Streamlit secrets
+        # Use chr(92) + chr(110) to represent backslash-n safely
+        newline_char = chr(92) + chr(110)
+
         credentials_info = {
             "type": "service_account",
-            "project_id": st.secrets["google_sheets"]["project_id"] if "project_id" in st.secrets["google_sheets"] else "fasilink-edi",
-            "private_key_id": st.secrets["google_sheets"]["private_key_id"] if "private_key_id" in st.secrets["google_sheets"] else "",
-            "private_key": st.secrets["google_sheets"]["private_key"].replace("\n", "
-") if "private_key" in st.secrets["google_sheets"] else "",
-            "client_email": st.secrets["google_sheets"]["client_email"] if "client_email" in st.secrets["google_sheets"] else "",
+            "project_id": st.secrets["google_sheets"].get("project_id", "fasilink-edi"),
+            "private_key_id": st.secrets["google_sheets"].get("private_key_id", ""),
+            "private_key": st.secrets["google_sheets"].get("private_key", "").replace(newline_char, "\n"),
+            "client_email": st.secrets["google_sheets"].get("client_email", ""),
             "client_id": st.secrets["google_sheets"]["client_id"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": st.secrets["google_sheets"]["client_x509_cert_url"] if "client_x509_cert_url" in st.secrets["google_sheets"] else ""
+            "client_x509_cert_url": st.secrets["google_sheets"].get("client_x509_cert_url", "")
         }
 
-        # If using OAuth (client_id + client_secret)
-        if "client_secret" in st.secrets["google_sheets"]:
-            # For OAuth flow, we use a different approach
-            # For now, we'll use the simpler method with just client_id
-            pass
-
-        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(credentials_info, scopes=scopes)
         client = gspread.authorize(creds)
         return client
@@ -164,12 +160,12 @@ DATA_DIR.mkdir(exist_ok=True)
 SUBMISSIONS_FILE = DATA_DIR / "client_submissions.json"
 
 if not SUBMISSIONS_FILE.exists():
-    with open(SUBMISSIONS_FILE, 'w') as f:
+    with open(SUBMISSIONS_FILE, "w") as f:
         json.dump([], f)
 
 def load_submissions():
     try:
-        with open(SUBMISSIONS_FILE, 'r') as f:
+        with open(SUBMISSIONS_FILE, "r") as f:
             return json.load(f)
     except:
         return []
@@ -177,14 +173,14 @@ def load_submissions():
 def save_submission(data):
     submissions = load_submissions()
     submissions.append(data)
-    with open(SUBMISSIONS_FILE, 'w') as f:
+    with open(SUBMISSIONS_FILE, "w") as f:
         json.dump(submissions, f, indent=2, default=str)
 
 # ============================================================
 # HEADER
 # ============================================================
-st.markdown('<div class="main-header">⚕️ FasiLink EDI Onboarding</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Submit your information for AI-powered EDI setup</div>', unsafe_allow_html=True)
+st.markdown("<div class=\"main-header\">⚕️ FasiLink EDI Onboarding</div>", unsafe_allow_html=True)
+st.markdown("<div class=\"sub-header\">Submit your information for AI-powered EDI setup</div>", unsafe_allow_html=True)
 
 st.markdown("""
 <div class="info-box">
@@ -268,7 +264,7 @@ with st.form("client_onboarding"):
     notes = st.text_area("Notes / Special Requirements", placeholder="Any specific requirements, existing EDI setup, preferred go-live date, etc.")
 
     st.markdown("---")
-    agree_terms = st.checkbox("I agree to FasiLink's Terms of Service and Privacy Policy *")
+    agree_terms = st.checkbox("I agree to FasiLink Terms of Service and Privacy Policy *")
 
     submitted = st.form_submit_button("🚀 Submit for AI Review")
 
@@ -323,7 +319,7 @@ with st.form("client_onboarding"):
                 <h3 style="margin:0;">✅ Submission Received!</h3>
                 <p style="margin:0.5rem 0 0 0;">
                     Thank you, <b>{company_name}</b>. Your application has been submitted for AI review.<br>
-                    <b>Submission ID:</b> {submission['id']}<br>
+                    <b>Submission ID:</b> {submission["id"]}<br>
                     <b>Next Steps:</b> Our team will review your credentials and send EDI connection details within 24 hours.<br>
                     <b>Contact:</b> {contact_email} | {contact_phone}
                 </p>
